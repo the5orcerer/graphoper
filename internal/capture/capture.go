@@ -93,7 +93,10 @@ func (c *Capturer) onRequest(ctx context.Context, ev *network.EventRequestWillBe
 		}
 	}
 
-	postData := extractPostData(req.PostDataEntries)
+	postData := strings.TrimSpace(req.PostData)
+	if postData == "" {
+		postData = extractPostData(req.PostDataEntries)
+	}
 
 	captured := &models.CapturedRequest{
 		RequestID: string(ev.RequestID),
@@ -123,7 +126,8 @@ func (c *Capturer) onResponse(ctx context.Context, ev *network.EventResponseRece
 	c.pendingMu.Unlock()
 
 	if ok {
-		_ = req // status is captured in loading finished via GetResponseBody
+		req.ResponseStatus = int(ev.Response.Status)
+		req.ResponseHeaders = normalizeHeaders(ev.Response.Headers)
 	}
 
 	// Check if this is a JS bundle URL for later download
@@ -227,8 +231,8 @@ func (c *Capturer) processGraphQLResponse(req *models.CapturedRequest, body stri
 		resp := &models.Response{
 			OperationHash: hash,
 			ResponseJSON:  body,
-			HTTPStatus:    200, // From CDP response headers
-			Headers:       formatHeaders(req.Headers),
+			HTTPStatus:    req.ResponseStatus,
+			Headers:       formatHeaders(req.ResponseHeaders),
 		}
 
 		if err := c.db.InsertResponse(resp); err != nil {
@@ -365,6 +369,16 @@ func extractOpName(query string) string {
 			}
 		}
 	}
+	lower := strings.ToLower(query)
+	if strings.HasPrefix(lower, "fragment ") {
+		rest := query[len("fragment "):]
+		name := strings.FieldsFunc(rest, func(r rune) bool {
+			return r == ' ' || r == '\n' || r == '\r'
+		})
+		if len(name) > 0 && name[0] != "" {
+			return name[0]
+		}
+	}
 	return ""
 }
 
@@ -396,6 +410,22 @@ func sanitizeFilename(url string) string {
 func formatHeaders(h map[string]string) string {
 	if len(h) == 0 {
 		return ""
+	}
+
+	func normalizeHeaders(h network.Headers) map[string]string {
+		if len(h) == 0 {
+			return nil
+		}
+		out := make(map[string]string, len(h))
+		for k, v := range h {
+			switch t := v.(type) {
+			case string:
+				out[k] = t
+			default:
+				out[k] = fmt.Sprint(t)
+			}
+		}
+		return out
 	}
 	b, _ := json.Marshal(h)
 	return string(b)

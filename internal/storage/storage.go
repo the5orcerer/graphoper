@@ -21,6 +21,21 @@ type DB struct {
 	path string
 }
 
+// ExportData is a full snapshot of persisted capture artifacts.
+type ExportData struct {
+	Operations      []models.Operation      `json:"operations"`
+	Responses       []models.Response       `json:"responses"`
+	SchemaFragments []SchemaFragmentExport  `json:"schema_fragments"`
+}
+
+type SchemaFragmentExport struct {
+	TypeName  string `json:"typename"`
+	Fields    string `json:"fields"`
+	Parent    string `json:"parent"`
+	Source    string `json:"source"`
+	CreatedAt string `json:"created_at"`
+}
+
 // New opens (or creates) the SQLite database at the given path and
 // runs the schema migration.
 func New(dbPath string) (*DB, error) {
@@ -206,4 +221,62 @@ func (db *DB) Stats() (ops, resps, bundles, fragments int, err error) {
 	db.conn.QueryRow(`SELECT COUNT(*) FROM bundles`).Scan(&bundles)
 	db.conn.QueryRow(`SELECT COUNT(*) FROM schema_fragments`).Scan(&fragments)
 	return
+}
+
+// ExportSnapshot returns all persisted operations, responses, and schema fragments.
+func (db *DB) ExportSnapshot() (*ExportData, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	out := &ExportData{}
+
+	opRows, err := db.conn.Query(`
+		SELECT id, hash, operation_name, query, variables, source, endpoint, created_at
+		FROM operations
+		ORDER BY id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list operations: %w", err)
+	}
+	defer opRows.Close()
+	for opRows.Next() {
+		var op models.Operation
+		if err := opRows.Scan(&op.ID, &op.Hash, &op.OperationName, &op.Query, &op.Variables, &op.Source, &op.Endpoint, &op.CreatedAt); err != nil {
+			return nil, fmt.Errorf("storage: scan operation: %w", err)
+		}
+		out.Operations = append(out.Operations, op)
+	}
+
+	respRows, err := db.conn.Query(`
+		SELECT id, operation_hash, response_json, http_status, headers, created_at
+		FROM responses
+		ORDER BY id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list responses: %w", err)
+	}
+	defer respRows.Close()
+	for respRows.Next() {
+		var resp models.Response
+		if err := respRows.Scan(&resp.ID, &resp.OperationHash, &resp.ResponseJSON, &resp.HTTPStatus, &resp.Headers, &resp.CreatedAt); err != nil {
+			return nil, fmt.Errorf("storage: scan response: %w", err)
+		}
+		out.Responses = append(out.Responses, resp)
+	}
+
+	sRows, err := db.conn.Query(`
+		SELECT typename, fields, parent, source, created_at
+		FROM schema_fragments
+		ORDER BY id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list schema fragments: %w", err)
+	}
+	defer sRows.Close()
+	for sRows.Next() {
+		var sf SchemaFragmentExport
+		if err := sRows.Scan(&sf.TypeName, &sf.Fields, &sf.Parent, &sf.Source, &sf.CreatedAt); err != nil {
+			return nil, fmt.Errorf("storage: scan schema fragment: %w", err)
+		}
+		out.SchemaFragments = append(out.SchemaFragments, sf)
+	}
+
+	return out, nil
 }

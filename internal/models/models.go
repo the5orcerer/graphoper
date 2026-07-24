@@ -42,6 +42,8 @@ type CapturedRequest struct {
 	Method        string
 	PostData      string
 	Headers       map[string]string
+	ResponseStatus int
+	ResponseHeaders map[string]string
 	Timestamp     time.Time
 }
 
