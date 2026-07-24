@@ -1,6 +1,6 @@
 # graphoper
 
-Passive GraphQL reconnaissance tool. Launches a Chromium browser, observes all network traffic during normal browsing, captures GraphQL operations and responses, downloads JS bundles, extracts embedded queries, deduplicates everything, and stores results in SQLite.
+Passive GraphQL reconnaissance tool. Launches a Chromium browser, observes all network traffic during normal browsing, captures GraphQL operations and responses, downloads JS bundles, extracts embedded queries, and deduplicates everything.
 
 ## Install
 
@@ -25,10 +25,10 @@ Requires Chromium/Chrome installed on the system.
 # Route through a proxy
 ./graphoper -proxy http://127.0.0.1:8080 https://target.example.com
 
-# Custom database and bundle paths
-./graphoper -db ./database/mydb.db -bundles ./mybundles https://target.example.com
+# Custom bundle path
+./graphoper -bundles ./mybundles https://target.example.com
 
-# Project-scoped output (db, bundles, logs, exports)
+# Project-scoped output (bundles, logs, exports)
 ./graphoper -project bugbounty-target https://target.example.com
 
 # Export captured data on shutdown
@@ -54,9 +54,8 @@ Requires Chromium/Chrome installed on the system.
 
 ```
 graphoper/
-├── database/     # SQLite database
 ├── bundles/      # Downloaded JS bundles
-├── exports/      # Reserved for future export features
+├── exports/      # Optional export output (`-export`)
 └── logs/         # Session logs
 ```
 
@@ -68,7 +67,6 @@ graphoper/
 | `-profile` | `""` | Browser profile directory for session persistence |
 | `-proxy` | `""` | HTTP proxy URL |
 | `-project` | `""` | Project name for per-project storage layout (`projects/<name>/...`) |
-| `-db` | `database/graphoper.db` | SQLite database path (auto-scoped when `-project` is used unless overridden) |
 | `-bundles` | `bundles` | JS bundle download directory |
 | `-export` | `false` | Export captured operations, responses, and schema fragments on shutdown |
 | `-export-dir` | `exports` | Directory for export files (`.json` + `.graphql`) |

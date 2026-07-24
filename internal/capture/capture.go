@@ -260,7 +260,7 @@ func (c *Capturer) downloadBundle(url string) {
 	// Check if already downloaded
 	exists, err := c.db.BundleExists(url)
 	if err != nil {
-		c.logger.Printf("[bundle] db check error: %v", err)
+		c.logger.Printf("[bundle] bundle check error: %v", err)
 		return
 	}
 	if exists {

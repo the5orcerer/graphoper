@@ -2,8 +2,7 @@
 //
 // Launches a Chromium browser, observes all network traffic during normal
 // browsing, captures GraphQL operations and responses, downloads JS bundles,
-// extracts embedded GraphQL queries, deduplicates everything, and stores
-// results in SQLite for later analysis.
+// extracts embedded GraphQL queries, and deduplicates everything.
 //
 // Usage:
 //
@@ -15,7 +14,6 @@
 //	-profile <dir>   Persist browser profile to <dir> for session reuse
 //	-proxy <url>     Route traffic through an HTTP proxy
 //	-project <name>  Save data under projects/<name>/
-//	-db <path>       SQLite database path (default: database/graphoper.db)
 //	-bundles <dir>   Directory for downloaded JS bundles (default: bundles/)
 //	-export          Export captured data on shutdown
 //	-export-dir      Directory for export output (default: exports/)
@@ -57,7 +55,6 @@ const banner = `
 
 func main() {
 	const (
-		defaultDBPath    = "database/graphoper.db"
 		defaultBundleDir = "bundles"
 		defaultExportDir = "exports"
 	)
@@ -68,7 +65,6 @@ func main() {
 		profile   = flag.String("profile", "", "Browser profile directory for session persistence")
 		proxy     = flag.String("proxy", "", "HTTP proxy URL (e.g., http://127.0.0.1:8080)")
 		project   = flag.String("project", "", "Project name for per-project storage layout")
-		dbPath    = flag.String("db", defaultDBPath, "SQLite database path")
 		bundleDir = flag.String("bundles", defaultBundleDir, "JS bundle download directory")
 		exportDir = flag.String("export-dir", defaultExportDir, "Directory for exported capture data")
 		doExport  = flag.Bool("export", false, "Export captured operations/responses/schema on shutdown")
@@ -80,10 +76,6 @@ func main() {
 	projectRoot := ""
 	if strings.TrimSpace(*project) != "" {
 		projectRoot = filepath.Join("projects", sanitizeProjectName(*project))
-
-		if *dbPath == defaultDBPath {
-			*dbPath = filepath.Join(projectRoot, "database", "graphoper.db")
-		}
 		if *bundleDir == defaultBundleDir {
 			*bundleDir = filepath.Join(projectRoot, "bundles")
 		}
@@ -139,10 +131,9 @@ func main() {
 	}
 
 	// ── Storage ──
-	logBoth("[init] opening database: %s", *dbPath)
-	db, err := storage.New(*dbPath)
+	db, err := storage.New()
 	if err != nil {
-		logger.Fatalf("failed to open database: %v", err)
+		logger.Fatalf("failed to initialize storage: %v", err)
 	}
 	defer db.Close()
 
@@ -208,7 +199,7 @@ func main() {
 		for range statusTicker.C {
 			reqs, gql, bundles := capturer.Stats()
 			ops, resps, bndls, frags, _ := db.Stats()
-			logBoth("[status] requests=%d graphql=%d bundles_dl=%d | db: ops=%d resps=%d bundles=%d types=%d",
+			logBoth("[status] requests=%d graphql=%d bundles_dl=%d | captured: ops=%d resps=%d bundles=%d types=%d",
 				reqs, gql, bundles, ops, resps, bndls, frags)
 		}
 	}()
@@ -243,13 +234,12 @@ func main() {
 	logBoth("[final] GraphQL operations found: %d", gql)
 	logBoth("[final] JS bundles downloaded:    %d", bundles)
 	logBoth("[final] ───────────────────────────────────────")
-	logBoth("[final] DB operations:     %d", ops)
-	logBoth("[final] DB responses:      %d", resps)
-	logBoth("[final] DB bundles:        %d", bndls)
-	logBoth("[final] DB schema types:   %d", frags)
+	logBoth("[final] Operations stored:  %d", ops)
+	logBoth("[final] Responses stored:   %d", resps)
+	logBoth("[final] Bundles stored:     %d", bndls)
+	logBoth("[final] Schema types seen:  %d", frags)
 	logBoth("[final] Unique op hashes:  %d", dd.Count())
 	logBoth("[final] ═══════════════════════════════════════")
-	logBoth("[final] database saved: %s", *dbPath)
 	if *doExport {
 		if err := writeExport(db, *exportDir, projectRoot); err != nil {
 			logBoth("[final] export failed: %v", err)
