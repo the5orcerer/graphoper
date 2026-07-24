@@ -4,6 +4,7 @@ package extractor
 
 import (
 	"encoding/json"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -22,7 +23,7 @@ type graphqlBodyPayload struct {
 func ParseNetworkRequest(body, url string) *models.Operation {
 	body = strings.TrimSpace(body)
 	if body == "" {
-		return nil
+		return parseFromURL(url)
 	}
 
 	// Try single operation
@@ -43,13 +44,17 @@ func ParseNetworkRequest(body, url string) *models.Operation {
 		}
 	}
 
-	return nil
+	return parseFromURL(url)
 }
 
 // ParseBatchRequest extracts all operations from a batched GraphQL request.
 func ParseBatchRequest(body, url string) []*models.Operation {
 	body = strings.TrimSpace(body)
 	if body == "" {
+		op := parseFromURL(url)
+		if op != nil {
+			return []*models.Operation{op}
+		}
 		return nil
 	}
 
@@ -69,6 +74,13 @@ func ParseBatchRequest(body, url string) []*models.Operation {
 			ops = append(ops, buildOp(p, url))
 		}
 	}
+
+	if len(ops) == 0 {
+		op := parseFromURL(url)
+		if op != nil {
+			return []*models.Operation{op}
+		}
+	}
 	return ops
 }
 
@@ -86,6 +98,30 @@ func buildOp(p graphqlBodyPayload, url string) *models.Operation {
 		Source:        "network",
 		Endpoint:      url,
 	}
+}
+
+func parseFromURL(raw string) *models.Operation {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	query := parsed.Query().Get("query")
+	if strings.TrimSpace(query) == "" {
+		return nil
+	}
+	opName := parsed.Query().Get("operationName")
+	vars := parsed.Query().Get("variables")
+	query = strings.TrimSpace(query)
+	if looksLikeGraphQL(query) {
+		return &models.Operation{
+			OperationName: opName,
+			Query:         query,
+			Variables:     vars,
+			Source:        "network",
+			Endpoint:      raw,
+		}
+	}
+	return nil
 }
 
 // IsGraphQLRequest returns true if the URL or content-type suggests this
@@ -113,6 +149,12 @@ func IsGraphQLRequest(url string, headers map[string]string, postData string) bo
 			strings.Contains(postData, `"operationName"`) {
 			return true
 		}
+	}
+
+	// GET-style GraphQL query string
+	if strings.Contains(urlLower, "query=") ||
+		strings.Contains(urlLower, "operationname=") {
+		return true
 	}
 
 	return false
@@ -196,7 +238,7 @@ var bundlePatterns = []*regexp.Regexp{
 	regexp.MustCompile("(?s)(?:gql|graphql)`([^`]+)`"),
 
 	// String literal queries with common GraphQL keywords
-	regexp.MustCompile(`(?s)"((?:query|mutation|subscription|fragment)\s+\w+[\s\S]*?(?:\{[\s\S]*?\}))"` ),
+	regexp.MustCompile(`(?s)"((?:query|mutation|subscription|fragment)\s+\w+[\s\S]*?(?:\{[\s\S]*?\}))"`),
 	regexp.MustCompile(`(?s)'((?:query|mutation|subscription|fragment)\s+\w+[\s\S]*?(?:\{[\s\S]*?\}))'`),
 
 	// Relay-style persisted queries

@@ -14,14 +14,18 @@
 //	-headless        Run Chromium in headless mode (default: false)
 //	-profile <dir>   Persist browser profile to <dir> for session reuse
 //	-proxy <url>     Route traffic through an HTTP proxy
+//	-project <name>  Save data under projects/<name>/
 //	-db <path>       SQLite database path (default: database/graphoper.db)
 //	-bundles <dir>   Directory for downloaded JS bundles (default: bundles/)
+//	-export          Export captured data on shutdown
+//	-export-dir      Directory for export output (default: exports/)
 //	-timeout <dur>   Maximum session duration (default: 0 = unlimited)
 //	-v               Verbose logging
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -52,17 +56,41 @@ const banner = `
 `
 
 func main() {
+	const (
+		defaultDBPath    = "database/graphoper.db"
+		defaultBundleDir = "bundles"
+		defaultExportDir = "exports"
+	)
+
 	// ── Flags ──
 	var (
-		headless   = flag.Bool("headless", false, "Run Chromium in headless mode")
-		profile    = flag.String("profile", "", "Browser profile directory for session persistence")
-		proxy      = flag.String("proxy", "", "HTTP proxy URL (e.g., http://127.0.0.1:8080)")
-		dbPath     = flag.String("db", "database/graphoper.db", "SQLite database path")
-		bundleDir  = flag.String("bundles", "bundles", "JS bundle download directory")
-		timeout    = flag.Duration("timeout", 0, "Max session duration (0 = unlimited)")
-		verbose    = flag.Bool("v", false, "Verbose logging")
+		headless  = flag.Bool("headless", false, "Run Chromium in headless mode")
+		profile   = flag.String("profile", "", "Browser profile directory for session persistence")
+		proxy     = flag.String("proxy", "", "HTTP proxy URL (e.g., http://127.0.0.1:8080)")
+		project   = flag.String("project", "", "Project name for per-project storage layout")
+		dbPath    = flag.String("db", defaultDBPath, "SQLite database path")
+		bundleDir = flag.String("bundles", defaultBundleDir, "JS bundle download directory")
+		exportDir = flag.String("export-dir", defaultExportDir, "Directory for exported capture data")
+		doExport  = flag.Bool("export", false, "Export captured operations/responses/schema on shutdown")
+		timeout   = flag.Duration("timeout", 0, "Max session duration (0 = unlimited)")
+		verbose   = flag.Bool("v", false, "Verbose logging")
 	)
 	flag.Parse()
+
+	projectRoot := ""
+	if strings.TrimSpace(*project) != "" {
+		projectRoot = filepath.Join("projects", sanitizeProjectName(*project))
+
+		if *dbPath == defaultDBPath {
+			*dbPath = filepath.Join(projectRoot, "database", "graphoper.db")
+		}
+		if *bundleDir == defaultBundleDir {
+			*bundleDir = filepath.Join(projectRoot, "bundles")
+		}
+		if *exportDir == defaultExportDir {
+			*exportDir = filepath.Join(projectRoot, "exports")
+		}
+	}
 
 	fmt.Print(banner)
 
@@ -76,11 +104,15 @@ func main() {
 	}
 
 	// Setup log file
-	if err := os.MkdirAll("logs", 0o755); err != nil {
+	logDir := "logs"
+	if projectRoot != "" {
+		logDir = filepath.Join(projectRoot, "logs")
+	}
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		logger.Fatalf("failed to create logs dir: %v", err)
 	}
 	logFile, err := os.OpenFile(
-		filepath.Join("logs", fmt.Sprintf("session_%s.log", time.Now().Format("20060102_150405"))),
+		filepath.Join(logDir, fmt.Sprintf("session_%s.log", time.Now().Format("20060102_150405"))),
 		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644,
 	)
 	if err != nil {
@@ -142,7 +174,7 @@ func main() {
 
 	// ── Enable Network domain ──
 	if err := chromedp.Run(session.Ctx,
-		network.Enable(),
+		network.Enable().WithMaxPostDataSize(1024*1024*16),
 	); err != nil {
 		logger.Fatalf("failed to enable network events: %v", err)
 	}
@@ -218,5 +250,63 @@ func main() {
 	logBoth("[final] Unique op hashes:  %d", dd.Count())
 	logBoth("[final] ═══════════════════════════════════════")
 	logBoth("[final] database saved: %s", *dbPath)
+	if *doExport {
+		if err := writeExport(db, *exportDir, projectRoot); err != nil {
+			logBoth("[final] export failed: %v", err)
+		} else {
+			logBoth("[final] export saved: %s", *exportDir)
+		}
+	}
 	logBoth("[final] session complete")
+}
+
+func sanitizeProjectName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "default"
+	}
+	s := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			return r
+		}
+		return '_'
+	}, name)
+	if s == "" {
+		return "default"
+	}
+	return s
+}
+
+func writeExport(db *storage.DB, exportDir, projectRoot string) error {
+	snapshot, err := db.ExportSnapshot()
+	if err != nil {
+		return err
+	}
+	if projectRoot != "" && exportDir == "exports" {
+		exportDir = filepath.Join(projectRoot, "exports")
+	}
+	if err := os.MkdirAll(exportDir, 0o755); err != nil {
+		return err
+	}
+
+	stamp := time.Now().Format("20060102_150405")
+	jsonPath := filepath.Join(exportDir, fmt.Sprintf("capture_%s.json", stamp))
+	jsonData, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(jsonPath, jsonData, 0o644); err != nil {
+		return err
+	}
+
+	gqlPath := filepath.Join(exportDir, fmt.Sprintf("operations_%s.graphql", stamp))
+	var gql strings.Builder
+	for _, op := range snapshot.Operations {
+		if strings.TrimSpace(op.Query) == "" {
+			continue
+		}
+		gql.WriteString(op.Query)
+		gql.WriteString("\n\n")
+	}
+	return os.WriteFile(gqlPath, []byte(gql.String()), 0o644)
 }
