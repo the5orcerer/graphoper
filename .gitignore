@@ -1,0 +1,32 @@
+# Binaries
+graphoper
+*.exe
+*.out
+
+# Database
+database/*.db
+database/*.db-shm
+database/*.db-wal
+
+# Downloaded bundles
+bundles/*.js
+bundles/*.mjs
+
+# Logs
+logs/*.log
+
+# Exports
+exports/*
+
+# Browser profile data
+profile/
+
+# Go
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
