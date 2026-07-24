@@ -91,30 +91,6 @@ func buildOp(p graphqlBodyPayload, url string) *models.Operation {
 		vars = string(b)
 	}
 
-	func parseFromURL(raw string) *models.Operation {
-		parsed, err := url.Parse(raw)
-		if err != nil {
-			return nil
-		}
-		query := parsed.Query().Get("query")
-		if strings.TrimSpace(query) == "" {
-			return nil
-		}
-		opName := parsed.Query().Get("operationName")
-		vars := parsed.Query().Get("variables")
-		query = strings.TrimSpace(query)
-		if looksLikeGraphQL(query) {
-			return &models.Operation{
-				OperationName: opName,
-				Query:         query,
-				Variables:     vars,
-				Source:        "network",
-				Endpoint:      raw,
-			}
-		}
-		return nil
-	}
-
 	return &models.Operation{
 		OperationName: p.OperationName,
 		Query:         p.Query,
@@ -122,6 +98,30 @@ func buildOp(p graphqlBodyPayload, url string) *models.Operation {
 		Source:        "network",
 		Endpoint:      url,
 	}
+}
+
+func parseFromURL(raw string) *models.Operation {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	query := parsed.Query().Get("query")
+	if strings.TrimSpace(query) == "" {
+		return nil
+	}
+	opName := parsed.Query().Get("operationName")
+	vars := parsed.Query().Get("variables")
+	query = strings.TrimSpace(query)
+	if looksLikeGraphQL(query) {
+		return &models.Operation{
+			OperationName: opName,
+			Query:         query,
+			Variables:     vars,
+			Source:        "network",
+			Endpoint:      raw,
+		}
+	}
+	return nil
 }
 
 // IsGraphQLRequest returns true if the URL or content-type suggests this
@@ -238,7 +238,7 @@ var bundlePatterns = []*regexp.Regexp{
 	regexp.MustCompile("(?s)(?:gql|graphql)`([^`]+)`"),
 
 	// String literal queries with common GraphQL keywords
-	regexp.MustCompile(`(?s)"((?:query|mutation|subscription|fragment)\s+\w+[\s\S]*?(?:\{[\s\S]*?\}))"` ),
+	regexp.MustCompile(`(?s)"((?:query|mutation|subscription|fragment)\s+\w+[\s\S]*?(?:\{[\s\S]*?\}))"`),
 	regexp.MustCompile(`(?s)'((?:query|mutation|subscription|fragment)\s+\w+[\s\S]*?(?:\{[\s\S]*?\}))'`),
 
 	// Relay-style persisted queries

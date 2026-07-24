@@ -64,16 +64,16 @@ func main() {
 
 	// ── Flags ──
 	var (
-		headless   = flag.Bool("headless", false, "Run Chromium in headless mode")
-		profile    = flag.String("profile", "", "Browser profile directory for session persistence")
-		proxy      = flag.String("proxy", "", "HTTP proxy URL (e.g., http://127.0.0.1:8080)")
-		project    = flag.String("project", "", "Project name for per-project storage layout")
-		dbPath     = flag.String("db", defaultDBPath, "SQLite database path")
-		bundleDir  = flag.String("bundles", defaultBundleDir, "JS bundle download directory")
-		exportDir  = flag.String("export-dir", defaultExportDir, "Directory for exported capture data")
-		doExport   = flag.Bool("export", false, "Export captured operations/responses/schema on shutdown")
-		timeout    = flag.Duration("timeout", 0, "Max session duration (0 = unlimited)")
-		verbose    = flag.Bool("v", false, "Verbose logging")
+		headless  = flag.Bool("headless", false, "Run Chromium in headless mode")
+		profile   = flag.String("profile", "", "Browser profile directory for session persistence")
+		proxy     = flag.String("proxy", "", "HTTP proxy URL (e.g., http://127.0.0.1:8080)")
+		project   = flag.String("project", "", "Project name for per-project storage layout")
+		dbPath    = flag.String("db", defaultDBPath, "SQLite database path")
+		bundleDir = flag.String("bundles", defaultBundleDir, "JS bundle download directory")
+		exportDir = flag.String("export-dir", defaultExportDir, "Directory for exported capture data")
+		doExport  = flag.Bool("export", false, "Export captured operations/responses/schema on shutdown")
+		timeout   = flag.Duration("timeout", 0, "Max session duration (0 = unlimited)")
+		verbose   = flag.Bool("v", false, "Verbose logging")
 	)
 	flag.Parse()
 
@@ -174,7 +174,7 @@ func main() {
 
 	// ── Enable Network domain ──
 	if err := chromedp.Run(session.Ctx,
-		network.Enable(),
+		network.Enable().WithMaxPostDataSize(1024*1024*16),
 	); err != nil {
 		logger.Fatalf("failed to enable network events: %v", err)
 	}

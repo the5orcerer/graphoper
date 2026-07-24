@@ -23,9 +23,9 @@ type DB struct {
 
 // ExportData is a full snapshot of persisted capture artifacts.
 type ExportData struct {
-	Operations      []models.Operation      `json:"operations"`
-	Responses       []models.Response       `json:"responses"`
-	SchemaFragments []SchemaFragmentExport  `json:"schema_fragments"`
+	Operations      []models.Operation     `json:"operations"`
+	Responses       []models.Response      `json:"responses"`
+	SchemaFragments []SchemaFragmentExport `json:"schema_fragments"`
 }
 
 type SchemaFragmentExport struct {

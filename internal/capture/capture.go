@@ -28,10 +28,10 @@ import (
 // Capturer listens to Chrome DevTools Protocol events and processes
 // GraphQL traffic and JS bundles.
 type Capturer struct {
-	db         *storage.DB
-	dedup      *dedup.Deduplicator
-	bundleDir  string
-	logger     *log.Logger
+	db        *storage.DB
+	dedup     *dedup.Deduplicator
+	bundleDir string
+	logger    *log.Logger
 
 	// pending holds request data keyed by request ID until the response arrives.
 	pending   map[network.RequestID]*models.CapturedRequest
@@ -93,9 +93,11 @@ func (c *Capturer) onRequest(ctx context.Context, ev *network.EventRequestWillBe
 		}
 	}
 
-	postData := strings.TrimSpace(req.PostData)
-	if postData == "" {
-		postData = extractPostData(req.PostDataEntries)
+	postData := extractPostData(req.PostDataEntries)
+	if postData == "" && (strings.EqualFold(req.Method, "POST") || strings.EqualFold(req.Method, "PUT") || strings.EqualFold(req.Method, "PATCH")) {
+		if body, err := network.GetRequestPostData(ev.RequestID).Do(ctx); err == nil {
+			postData = string(body)
+		}
 	}
 
 	captured := &models.CapturedRequest{
@@ -411,24 +413,24 @@ func formatHeaders(h map[string]string) string {
 	if len(h) == 0 {
 		return ""
 	}
-
-	func normalizeHeaders(h network.Headers) map[string]string {
-		if len(h) == 0 {
-			return nil
-		}
-		out := make(map[string]string, len(h))
-		for k, v := range h {
-			switch t := v.(type) {
-			case string:
-				out[k] = t
-			default:
-				out[k] = fmt.Sprint(t)
-			}
-		}
-		return out
-	}
 	b, _ := json.Marshal(h)
 	return string(b)
+}
+
+func normalizeHeaders(h network.Headers) map[string]string {
+	if len(h) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(h))
+	for k, v := range h {
+		switch t := v.(type) {
+		case string:
+			out[k] = t
+		default:
+			out[k] = fmt.Sprint(t)
+		}
+	}
+	return out
 }
 
 // extractPostData concatenates all PostDataEntry.Bytes into a single string.
